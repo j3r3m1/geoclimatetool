@@ -3,18 +3,18 @@
 # This file should be included when you package your plugin.# Mandatory items:
 
 [general]
-name=CoolParksTool
+name=GeoClimateTool
 qgisMinimumVersion=3.0
-description=This plugin evaluates the cooling effect of a park and its impact on buildings energy and thermal comfort
-version=0.0.2
+description=This plugin creates the configuration file and execute it as a workflow of the GeoClimate software
+version=0.0.1
 author=Jeremy Bernard
 email=jeremy.bernard@zaclys.net
 
-about=This plugin summarizes the results of the research project called CoolParks. The user provides park boundaries, type of ground within the park, type of canopy within the park and meteorological conditions. As output the cooling effect of the park on its surrounding built-up area is calculated as well as its impact on building energy consumption and building indoor thermal comfort
+about=This plugin creates the configuration file and execute it as a workflow of the GeoClimate software
 
 
-tracker=https://github.com/j3r3m1/coolparkstool/issues
-repository=https://github.com/j3r3m1/coolparkstool
+tracker=https://github.com/j3r3m1/geoclimatetool/issues
+repository=https://github.com/j3r3m1/geoclimatetool
 # End of mandatory metadata
 
 # Recommended items:
@@ -22,15 +22,14 @@ repository=https://github.com/j3r3m1/coolparkstool
 hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
 changelog=
-    0.0.2   : Add the unload function in the processing_coolparks.py file
     0.0.1   : First release. Experimental.
     
 # Tags are comma separated with spaces allowed
-tags=urban climate, urban planning, parks, cooling, modelling, urban morphology, urban geometry
+tags=urban climate, urban planning, urban morphology, urban geometry, geoclimate, local climate zone
 
-homepage=https://github.com/j3r3m1/coolparkstool#readme
+homepage=https://github.com/j3r3m1/geoclimate#readme
 # category=Plugins
-icon=Icons/CoolParksTool.png
+#icon=Icons/CoolParksTool.png
 # experimental flag
 experimental=True
 
