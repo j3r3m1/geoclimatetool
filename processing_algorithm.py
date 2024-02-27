@@ -62,7 +62,6 @@ import inspect
 from .functions.globalVariables import *
 from .functions.otherFunctions import runProcess, loadFile
 import json
-from urllib.request import urlretrieve
 import glob
 
 class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
@@ -99,6 +98,8 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
     # Whether or not inputs and outputs are loaded at the end
     LOAD_INPUTS = "LOAD_INPUTS"
     LOAD_OUTPUTS = "LOAD_OUTPUTS"
+    # Language of the style for the loaded layers
+    STYLE_LANGUAGE = "STYLE_LANGUAGE"
     
     def initAlgorithm(self, config):
         """
@@ -176,6 +177,13 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
                 self.LOAD_OUTPUTS,
                 self.tr('Tick if you want to automatically load the output data once calculation completed'),
                 defaultValue = True)) 
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.STYLE_LANGUAGE, 
+                self.tr('If input or output data loaded, what language do you want for the legend ?'),
+                list(STYLE_LANGUAGE.keys()),
+                defaultValue=0,
+                optional = False))
 
     def processAlgorithm(self, parameters, context, feedback):
         """
@@ -196,6 +204,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         outputDirectory = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
         loadInputs = self.parameterAsBoolean(parameters, self.LOAD_INPUTS, context)
         loadOutputs = self.parameterAsBoolean(parameters, self.LOAD_OUTPUTS, context)
+        styleLanguage = self.parameterAsInt(parameters, self.STYLE_LANGUAGE, context)
         
         #prefix = unidecode.unidecode(weatherScenario).replace(" ", "_")
         
@@ -211,37 +220,21 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             raise QgsProcessingException(f"You have selected {inputDataset}. You need to provide the input data.")
         if (inputDataset == OSM) and inputDirectory:
             raise QgsProcessingException(f"You have selected {inputDataset}. You do not need to provide the input data.")
-            
-        # Get the plugin directory to put the last stable GeoClimate version
+        
+        # Get the output language used for the loaded files
+        styleLanguage = STYLE_LANGUAGE[list(STYLE_LANGUAGE.keys())[styleLanguage]]
+        
+        # Get the plugin directory
         plugin_directory = self.plugin_dir = os.path.dirname(__file__)
         
-        # GeoClimate path of the last version
-        geoclim_jar_path = os.path.join(plugin_directory, 'Resources', GEOCLIMATE_JAR_NAME)
+        # Download the last stable GeoClimate version
+        downloadLastGeoClimate(plugin_directory = plugin_directory,
+                               feedback = feedback)
         
-        list_loc_geoc_vers = glob.glob(os.path.join(plugin_directory, 'Resources', "geoclimate*.jar"))
-        if list_loc_geoc_vers:
-            # Remove all potential old GeoClimate versions
-            list_old_geoc_vers = list_loc_geoc_vers.copy()
-            if list_loc_geoc_vers.count(geoclim_jar_path)>0:
-                list_old_geoc_vers.remove(geoclim_jar_path)
-            for path_old_v in list_old_geoc_vers:
-                os.remove(path_old_v)
-            
-            # Download the last GeoClimate version if not already downloaded
-            if not os.path.exists(geoclim_jar_path):
-                if feedback:
-                    feedback.setProgressText("You do not have the last GeoClimate version. Downloading...")
-                    if feedback.isCanceled():
-                        feedback.setProgressText("Calculation cancelled by user")
-                        return {}
-                urlretrieve(GEOCLIMATE_JAR_URL, geoclim_jar_path)
-        else:
-            if feedback:
-                feedback.setProgressText("You do not have the last GeoClimate version. Downloading...")
-                if feedback.isCanceled():
-                    feedback.setProgressText("Calculation cancelled by user")
-                    return {}
-            urlretrieve(GEOCLIMATE_JAR_URL, geoclim_jar_path)
+        # Check that the last sld style has been downloaded
+        downloadLastStyles(plugin_directory = plugin_directory,
+                           feedback = feedback,
+                           language = styleLanguage)
         
         # Recover the bbox coordinates if exists
         if not bbox.isNull():
@@ -353,12 +346,20 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             for fp in list_result_files:
                 f = fp.split(os.sep)[-1].split(".")[0]
                 if INPUT_TABLES.columns.to_list().count() > 0:
-                    loadFile()
+                    loadFile(filepath = fp,
+                             layername = f,
+                             styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
+                                                                               language), 
+                                                          INPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
         if loadOutputs:
             for fp in list_result_files:
                 f = fp.split(os.sep)[-1].split(".")[0]
                 if OUTPUT_TABLES.columns.to_list().count() > 0:
-                    loadFile()
+                    loadFile(filepath = fp,
+                             layername = f,
+                             styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
+                                                                               language), 
+                                                          OUTPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
         # global layernames
         # layernames = {}
         # i = 0

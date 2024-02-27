@@ -7,6 +7,12 @@ Created on Fri Feb 16 16:36:54 2024
 """
 import subprocess
 from .globalVariables import *
+from urllib.request import urlretrieve
+from pathlib import Path
+import subprocess
+import platform
+from github import Github
+import ghDownload as ghd
 
 from qgis.PyQt.QtGui import QColor
 from qgis.core import (QgsProject, 
@@ -54,17 +60,90 @@ def runProcess(exe):
         if retcode is not None:
             break
         
+def downloadLastGeoClimate(plugin_directory, feedback):
+    """Function to download the last GeoClimate version if not locally saved.
+
+		Parameters
+		_ _ _ _ _ _ _ _ _ _ 
+
+			plugin_directory: string
+				Directory where is located the plugin algorithm file
+            feedback: QGIS feedback object
+                QGIS feedback object used to log message to the user
+    """
+    # GeoClimate path of the last version
+    geoclim_jar_path = os.path.join(plugin_directory, 'Resources', GEOCLIMATE_JAR_NAME)
+    
+    list_loc_geoc_vers = glob.glob(os.path.join(plugin_directory, 'Resources', "geoclimate*.jar"))
+    if list_loc_geoc_vers:
+        # Remove all potential old GeoClimate versions
+        list_old_geoc_vers = list_loc_geoc_vers.copy()
+        if list_loc_geoc_vers.count(geoclim_jar_path)>0:
+            list_old_geoc_vers.remove(geoclim_jar_path)
+        for path_old_v in list_old_geoc_vers:
+            os.remove(path_old_v)
+        
+        # Download the last GeoClimate version if not already downloaded
+        if not os.path.exists(geoclim_jar_path):
+            if feedback:
+                feedback.setProgressText("You do not have the last GeoClimate version. Downloading...")
+                if feedback.isCanceled():
+                    feedback.setProgressText("Calculation cancelled by user")
+                    return {}
+            urlretrieve(GEOCLIMATE_JAR_URL, geoclim_jar_path)
+    else:
+        if feedback:
+            feedback.setProgressText("You do not have the last GeoClimate version. Downloading...")
+            if feedback.isCanceled():
+                feedback.setProgressText("Calculation cancelled by user")
+                return {}
+        urlretrieve(GEOCLIMATE_JAR_URL, geoclim_jar_path)
+        
+def downloadLastStyles(plugin_directory, feedback, language):
+    """Function to download the last GeoClimate version if not locally saved.
+
+		Parameters
+		_ _ _ _ _ _ _ _ _ _ 
+
+			plugin_directory: string
+				Directory where is located the plugin algorithm file
+            feedback: QGIS feedback object
+                QGIS feedback object used to log message to the user
+            language: string
+                Language used for the legend style
+    """
+    if feedback:
+        feedback.setProgressText("Try downloading last valid GeoClimate styles")
+        if feedback.isCanceled():
+            feedback.setProgressText("Calculation cancelled by user")
+            return {}
+    
+    # GeoClimate path of the last version
+    style_path = LAYER_SLD_DIR.format(plugin_directory, language)
+    
+    # Get the url of the GeoClimate styles
+    url_styles = STYLE_GITHUB["directory"].format(language)
+    
+    github = Github(None)
+    try:
+        repository = github.get_repo(STYLE_GITHUB["repo"])
+    except:
+        feedback.pushwarning("""The GeoClimate github repository cannot be reached.\n
+                             You may not have the last GeoClimate styles.\n
+                             Please verify your internet connection.""")
+        pass
+    
+    if repository:
+        sha = ghd.get_sha_for_tag(repository, STYLE_GITHUB["branch"])
+        ghd.download_directory(repository = repository,
+                               sha = sha,
+                               server_path = url_styles,
+                               computer_dir = style_path)
+
         
 def loadFile(filepath,
              layername,
-             variable,
-             subgroup,
-             vector_min,
-             vector_max,
-             feedback,
-             context,
-             valueZero = None,
-             opacity = DEFAULT_OPACITY):
+             styleFileName):
     loadedVector = \
         QgsVectorLayer(filepath, 
                        "",
@@ -77,10 +156,9 @@ def loadFile(filepath,
                                            QgsProcessingContext.LayerDetails("",
                                                                               QgsProject.instance(),
                                                                               ''))
-        loadedVector.loadNamedStyle(os.path.join(resourceDir,\
-                                                 "Resources",
-                                                 VECTOR_STYLE_FILENAME),
-                                    True)
+        # Load a predefined style if exists
+        if styleFileName.split(os.path)[-1] != STYLE_EXTENSION:
+            loadedVector.loadNamedStyle(styleFileName,
+                                        True)
         context.layerToLoadOnCompletionDetails(loadedVector.id()).setPostProcessor(layername)
         context.temporaryLayerStore().addMapLayer(loadedVector)
-  
