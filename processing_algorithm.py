@@ -60,7 +60,7 @@ from qgis.PyQt.QtGui import QIcon
 import inspect
 #import unidecode
 from .functions.globalVariables import *
-from .functions.otherFunctions import runProcess
+from .functions.otherFunctions import runProcess, loadFile
 import json
 from urllib.request import urlretrieve
 import glob
@@ -76,6 +76,8 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
     # Input variables
     # Input dataset used for the workflow
     INPUT_DATASET = "INPUT_DATASET"
+    # Input directory
+    INPUT_DIRECTORY = "INPUT_DIRECTORY"
     # Tick if you want to estimate missing OSM building height
     ESTIMATED_HEIGHT = "ESTIMATED_HEIGHT"
     # Tick if you want to produce a LCZ map"
@@ -94,6 +96,9 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
     EXTENT = "EXTENT"
     # Warning: seems to not work in any folder of the temp...
     OUTPUT_DIRECTORY = "OUTPUT_DIRECTORY"
+    # Whether or not inputs and outputs are loaded at the end
+    LOAD_INPUTS = "LOAD_INPUTS"
+    LOAD_OUTPUTS = "LOAD_OUTPUTS"
     
     def initAlgorithm(self, config):
         """
@@ -109,6 +114,12 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
                 list(SRID.keys()),
                 defaultValue=0,
                 optional = False))
+        self.addParameter(
+            QgsProcessingParameterFolderDestination(
+                self.INPUT_DIRECTORY,
+                self.tr('If your data are BDT, select the folder containing the data'),
+                defaultValue = "",
+                optional = True))
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.ESTIMATED_HEIGHT,
@@ -155,6 +166,16 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
                 self.OUTPUT_DIRECTORY,
                 self.tr('Directory to save the outputs'),
                 defaultValue = ""))
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.LOAD_INPUTS,
+                self.tr('Tick if you want to automatically load the input data once calculation completed'),
+                defaultValue = False)) 
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.LOAD_OUTPUTS,
+                self.tr('Tick if you want to automatically load the output data once calculation completed'),
+                defaultValue = True)) 
 
     def processAlgorithm(self, parameters, context, feedback):
         """
@@ -162,6 +183,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         """
         
         inputDataset = self.parameterAsInt(parameters, self.INPUT_DATASET, context)
+        inputDirectory = self.parameterAsString(parameters, self.INPUT_DIRECTORY, context)
         estimatedHeight = self.parameterAsBoolean(parameters, self.ESTIMATED_HEIGHT, context)
         lczCalc = self.parameterAsBoolean(parameters, self.LCZ_CALC, context)
         utrfCalc = self.parameterAsBoolean(parameters, self.UTRF_CALC, context)
@@ -172,15 +194,24 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         bbox = self.parameterAsExtent(parameters, self.EXTENT, context)
         bbox_crs_ini = self.parameterAsExtentCrs(parameters, self.EXTENT, context)
         outputDirectory = self.parameterAsString(parameters, self.OUTPUT_DIRECTORY, context)
+        loadInputs = self.parameterAsBoolean(parameters, self.LOAD_INPUTS, context)
+        loadOutputs = self.parameterAsBoolean(parameters, self.LOAD_OUTPUTS, context)
         
         #prefix = unidecode.unidecode(weatherScenario).replace(" ", "_")
         
+        # Log some errors is some combinations of parameters are not valid
         if location and not bbox.isNull():
             raise QgsProcessingException("You should fill a location OR select an extent, not both !!")
         elif not location and bbox.isNull():
             raise QgsProcessingException("You should specify a location or select an extent !!")
 
-        
+        # Get the input dataset used by the workflow
+        inputDataset = list(SRID.keys())[inputDataset]
+        if ((inputDataset == BDT_V2) or (inputDataset == BDT_V3)) and not inputDirectory:
+            raise QgsProcessingException(f"You have selected {inputDataset}. You need to provide the input data.")
+        if (inputDataset == OSM) and inputDirectory:
+            raise QgsProcessingException(f"You have selected {inputDataset}. You do not need to provide the input data.")
+            
         # Get the plugin directory to put the last stable GeoClimate version
         plugin_directory = self.plugin_dir = os.path.dirname(__file__)
         
@@ -211,9 +242,6 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
                     feedback.setProgressText("Calculation cancelled by user")
                     return {}
             urlretrieve(GEOCLIMATE_JAR_URL, geoclim_jar_path)
-            
-        # Get the input dataset used by the workflow
-        inputDataset = list(SRID.keys())[inputDataset]
         
         # Recover the bbox coordinates if exists
         if not bbox.isNull():
@@ -285,7 +313,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             },
             "output": {
                 "folder": outputDirectory,
-                "tables": OUTPUT_TABLES
+                "tables": INPUT_TABLES + OUTPUT_TABLES
             },
             "parameters": {
                 "rsu_indicators": {
@@ -295,6 +323,10 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
                 }
             }
         }
+        
+        # Add the informations that are only needed for BDT data
+        if inputDirectory:
+            config_file_content["input"]["folder"] = inputDirectory
 
         # Serializing json
         json_object = json.dumps(config_file_content, indent=4)
@@ -304,7 +336,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             outfile.write(json_object)
         
         # Define the java command line to be executed
-        java_cmd = f'java -jar {geoclim_jar_path} -w OSM -f {config_file_path}'
+        java_cmd = f'java -jar {geoclim_jar_path} -w {inputDataset} -f {config_file_path}'
         
         # Execute the GeoClimate workflow and log informations
         for line in runProcess(java_cmd.split()):
@@ -314,13 +346,19 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         # ######################################################################
         # ######################## LOAD DATA INTO QGIS #########################
         # ######################################################################
-        # # Calculates the number of significant digits
-        # if NB_ISOVALUES < 10:
-        #     sign_digits = 1
-        # else:
-        #     sign_digits = 2
-            
+        # List the files in the output GeoClimate directory
+        list_result_files = glob.glob(outputDirectory)
         # # Load data into QGIS
+        if loadInputs:
+            for fp in list_result_files:
+                f = fp.split(os.sep)[-1].split(".")[0]
+                if INPUT_TABLES.columns.to_list().count() > 0:
+                    loadFile()
+        if loadOutputs:
+            for fp in list_result_files:
+                f = fp.split(os.sep)[-1].split(".")[0]
+                if OUTPUT_TABLES.columns.to_list().count() > 0:
+                    loadFile()
         # global layernames
         # layernames = {}
         # i = 0
