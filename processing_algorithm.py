@@ -31,12 +31,8 @@ __copyright__ = '(C) 2024 by Jérémy Bernard'
 __revision__ = '$Format:%H$'
 
 import os
-from qgis.PyQt.QtCore import QCoreApplication, QVariant
-from qgis.core import (QgsProcessing,
-                       QgsProcessingAlgorithm,
-                       QgsProcessingParameterField,
-                       QgsProcessingParameterFeatureSource,
-                       QgsProcessingParameterNumber,
+from qgis.PyQt.QtCore import QCoreApplication
+from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterMatrix,
                        QgsProcessingParameterFolderDestination,
                        QgsProcessingParameterString,
@@ -60,7 +56,8 @@ from qgis.PyQt.QtGui import QIcon
 import inspect
 #import unidecode
 from .functions.globalVariables import *
-from .functions.otherFunctions import runProcess, loadFile
+from .functions.otherFunctions import runProcess, loadFile, downloadLastGeoClimate,\
+    downloadLastStyles
 import json
 import glob
 
@@ -228,7 +225,9 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         plugin_directory = self.plugin_dir = os.path.dirname(__file__)
         
         # Download the last stable GeoClimate version
-        downloadLastGeoClimate(plugin_directory = plugin_directory,
+        # GeoClimate path of the last version
+        geoclim_jar_path = os.path.join(plugin_directory, 'Resources', GEOCLIMATE_JAR_NAME)
+        downloadLastGeoClimate(geoclim_jar_path = geoclim_jar_path,
                                feedback = feedback)
         
         # Check that the last sld style has been downloaded
@@ -306,7 +305,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             },
             "output": {
                 "folder": outputDirectory,
-                "tables": INPUT_TABLES + OUTPUT_TABLES
+                "tables": INPUT_TABLES.columns.tolist() + OUTPUT_TABLES.columns.tolist()
             },
             "parameters": {
                 "rsu_indicators": {
@@ -332,34 +331,39 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         java_cmd = f'java -jar {geoclim_jar_path} -w {inputDataset} -f {config_file_path}'
         
         # Execute the GeoClimate workflow and log informations
-        for line in runProcess(java_cmd.split()):
-            feedback.setProgressText(line.decode("utf8"))
+        try: 
+            for line in runProcess(java_cmd.split()):
+                feedback.setProgressText(line.decode("utf8"))
+            executed = True
+        except:
+            executed = False
             
         
         # ######################################################################
         # ######################## LOAD DATA INTO QGIS #########################
         # ######################################################################
-        # List the files in the output GeoClimate directory
-        list_result_files = glob.glob(outputDirectory)
-        # # Load data into QGIS
-        if loadInputs:
-            for fp in list_result_files:
-                f = fp.split(os.sep)[-1].split(".")[0]
-                if INPUT_TABLES.columns.to_list().count() > 0:
-                    loadFile(filepath = fp,
-                             layername = f,
-                             styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
-                                                                               language), 
-                                                          INPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
-        if loadOutputs:
-            for fp in list_result_files:
-                f = fp.split(os.sep)[-1].split(".")[0]
-                if OUTPUT_TABLES.columns.to_list().count() > 0:
-                    loadFile(filepath = fp,
-                             layername = f,
-                             styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
-                                                                               language), 
-                                                          OUTPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
+        if executed:
+            # List the files in the output GeoClimate directory
+            list_result_files = glob.glob(outputDirectory)
+            # # Load data into QGIS
+            if loadInputs:
+                for fp in list_result_files:
+                    f = fp.split(os.sep)[-1].split(".")[0]
+                    if INPUT_TABLES.columns.to_list().count(f) > 0:
+                        loadFile(filepath = fp,
+                                 layername = f,
+                                 styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
+                                                                                   language), 
+                                                              INPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
+            if loadOutputs:
+                for fp in list_result_files:
+                    f = fp.split(os.sep)[-1].split(".")[0]
+                    if OUTPUT_TABLES.columns.to_list().count(f) > 0:
+                        loadFile(filepath = fp,
+                                 layername = f,
+                                 styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
+                                                                                   language), 
+                                                              OUTPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
         # global layernames
         # layernames = {}
         # i = 0
@@ -438,7 +442,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return self.tr('The GeoClimateTool "GeoClimate workflows" module is used '+
                        'to:\n'+
-                       '    - download data from OSM and convert to GIS files,\n'+
+                       '    - download data from OSM or load from BDTopo and convert to GeoClimate input files,\n'+
                        '    - calculates spatial indicators and typology from these files,\n'
         '\n'
         '\n'

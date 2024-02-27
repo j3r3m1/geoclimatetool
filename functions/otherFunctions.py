@@ -12,7 +12,8 @@ from pathlib import Path
 import subprocess
 import platform
 from github import Github
-import ghDownload as ghd
+from . import ghDownload as ghd
+import glob
 
 from qgis.PyQt.QtGui import QColor
 from qgis.core import (QgsProject, 
@@ -60,21 +61,19 @@ def runProcess(exe):
         if retcode is not None:
             break
         
-def downloadLastGeoClimate(plugin_directory, feedback):
+def downloadLastGeoClimate(geoclim_jar_path, feedback):
     """Function to download the last GeoClimate version if not locally saved.
 
 		Parameters
 		_ _ _ _ _ _ _ _ _ _ 
 
-			plugin_directory: string
-				Directory where is located the plugin algorithm file
+			geoclim_jar_path: string
+				Directory where will be located the geoclimate jar file
             feedback: QGIS feedback object
                 QGIS feedback object used to log message to the user
-    """
-    # GeoClimate path of the last version
-    geoclim_jar_path = os.path.join(plugin_directory, 'Resources', GEOCLIMATE_JAR_NAME)
-    
-    list_loc_geoc_vers = glob.glob(os.path.join(plugin_directory, 'Resources', "geoclimate*.jar"))
+    """    
+    list_loc_geoc_vers = glob.glob(os.path.join((os.sep).join(geoclim_jar_path.split(os.sep)[0:-1]),
+                                                "geoclimate*.jar"))
     if list_loc_geoc_vers:
         # Remove all potential old GeoClimate versions
         list_old_geoc_vers = list_loc_geoc_vers.copy()
