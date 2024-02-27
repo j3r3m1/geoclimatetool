@@ -59,4 +59,8 @@ BDT_V2 = "BDTOPO_V2"
 BDT_V3 = "BDTOPO_V3"
 
 # Define default SRID
-SRID = {OSM: 4326, BDT_V2: 2154, BDT_V3: 2154}
+DATASETS = pd.DataFrame({
+    OSM: [4326, "osm"],
+    BDT_V2: [2154, "bdtopo_2"],
+    BDT_V3: [2154, "bdtopo_3"]},
+    index = ['srid', 'folder_prefix'])

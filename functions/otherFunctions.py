@@ -150,7 +150,9 @@ def downloadLastStyles(plugin_directory, feedback, language):
         
 def loadFile(filepath,
              layername,
-             styleFileName):
+             styleFileName,
+             feedback,
+             context):
     loadedVector = \
         QgsVectorLayer(filepath, 
                        "",
@@ -164,8 +166,7 @@ def loadFile(filepath,
                                                                               QgsProject.instance(),
                                                                               ''))
         # Load a predefined style if exists
-        if styleFileName.split(os.path)[-1] != STYLE_EXTENSION:
-            loadedVector.loadNamedStyle(styleFileName,
-                                        True)
+        if styleFileName.split(os.sep)[-1] != STYLE_EXTENSION:
+            loadedVector.loadSldStyle(styleFileName)
         context.layerToLoadOnCompletionDetails(loadedVector.id()).setPostProcessor(layername)
         context.temporaryLayerStore().addMapLayer(loadedVector)

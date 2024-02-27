@@ -57,7 +57,7 @@ import inspect
 #import unidecode
 from .functions.globalVariables import *
 from .functions.otherFunctions import runProcess, loadFile, downloadLastGeoClimate,\
-    downloadLastStyles
+    downloadLastStyles, Renamer
 import json
 import glob
 
@@ -109,7 +109,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterEnum(
                 self.INPUT_DATASET, 
                 self.tr('What data do you want to use as input'),
-                list(SRID.keys()),
+                list(DATASETS.columns.tolist()),
                 defaultValue=0,
                 optional = False))
         self.addParameter(
@@ -212,7 +212,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             raise QgsProcessingException("You should specify a location or select an extent !!")
 
         # Get the input dataset used by the workflow
-        inputDataset = list(SRID.keys())[inputDataset]
+        inputDataset = DATASETS.columns.tolist()[inputDataset]
         if ((inputDataset == BDT_V2) or (inputDataset == BDT_V3)) and not inputDirectory:
             raise QgsProcessingException(f"You have selected {inputDataset}. You need to provide the input data.")
         if (inputDataset == OSM) and inputDirectory:
@@ -246,7 +246,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
 
             
             # The bbox coordinates should be in the correct srid, otherwise should be reprojected
-            if bbox_srid_ini != SRID[inputDataset]:
+            if bbox_srid_ini != DATASETS.loc["srid", inputDataset]:
                 bbox_transform = QgsCoordinateTransform(QgsCoordinateReferenceSystem("EPSG:3111"),
                                                         QgsCoordinateReferenceSystem("EPSG:4326"),
                                                         QgsProject.instance())
@@ -343,27 +343,45 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         # ######################## LOAD DATA INTO QGIS #########################
         # ######################################################################
         if executed:
+            global layernames
+            # Get the real output directory (since GeoClimate has created folders within
+            # the QGIS plugin output directory)
+            geoclim_out_dir = "_".join([DATASETS.loc["folder_prefix",inputDataset],
+                                       str(location).replace("[", "")\
+                                           .replace(']', "").replace(",","_")\
+                                               .replace(" ", "_")])
+            real_output_dir = os.path.join(outputDirectory, 
+                                           geoclim_out_dir,
+                                           "*.geojson")
             # List the files in the output GeoClimate directory
-            list_result_files = glob.glob(outputDirectory)
+            list_result_files = glob.glob(real_output_dir)
             # # Load data into QGIS
             if loadInputs:
-                for fp in list_result_files:
+                layernames = {}
+                for i, fp in enumerate(list_result_files):
                     f = fp.split(os.sep)[-1].split(".")[0]
                     if INPUT_TABLES.columns.to_list().count(f) > 0:
+                        layernames[i] = Renamer(f)
                         loadFile(filepath = fp,
-                                 layername = f,
+                                 layername = layernames[i],
                                  styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
-                                                                                   language), 
-                                                              INPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
+                                                                                   styleLanguage), 
+                                                              INPUT_TABLES.loc["style", f] + STYLE_EXTENSION),
+                                 context = context,
+                                 feedback = feedback)
             if loadOutputs:
-                for fp in list_result_files:
+                layernames = {}
+                for i, fp in enumerate(list_result_files):
                     f = fp.split(os.sep)[-1].split(".")[0]
                     if OUTPUT_TABLES.columns.to_list().count(f) > 0:
+                        layernames[i] = Renamer(f)
                         loadFile(filepath = fp,
-                                 layername = f,
+                                 layername = layernames[i],
                                  styleFileName = os.path.join(LAYER_SLD_DIR.format(plugin_directory, 
-                                                                                   language), 
-                                                              OUTPUT_TABLES.loc["style", f] + STYLE_EXTENSION))
+                                                                                   styleLanguage), 
+                                                              OUTPUT_TABLES.loc["style", f] + STYLE_EXTENSION),
+                                 context = context,
+                                 feedback = feedback)
         # global layernames
         # layernames = {}
         # i = 0
