@@ -74,7 +74,7 @@ def downloadLastGeoClimate(geoclim_jar_path, feedback):
     """    
     # Create the folder that should contain the GeoClimate jar file if not exists
     resource_dir = str(Path(geoclim_jar_path).parent)
-    if not os.path.exists():
+    if not os.path.exists(resource_dir):
         os.mkdir(resource_dir)
     list_loc_geoc_vers = glob.glob(os.path.join((os.sep).join(geoclim_jar_path.split(os.sep)[0:-1]),
                                                 "geoclimate*.jar"))
