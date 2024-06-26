@@ -9,7 +9,7 @@ import tempfile
 import os
 import pandas as pd
 
-GEOCLIMATE_VERSION = "1.0.0"
+GEOCLIMATE_VERSION = "1.0.1-20240624"
 
 GEOCLIMATE_JAR_URL = f"https://github.com/orbisgis/geoclimate/releases/download/v{GEOCLIMATE_VERSION}/geoclimate-{GEOCLIMATE_VERSION}.jar"
 

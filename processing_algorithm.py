@@ -204,7 +204,6 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         styleLanguage = self.parameterAsInt(parameters, self.STYLE_LANGUAGE, context)
         
         #prefix = unidecode.unidecode(weatherScenario).replace(" ", "_")
-        
         # Log some errors is some combinations of parameters are not valid
         if location and not bbox.isNull():
             raise QgsProcessingException("You should fill a location OR select an extent, not both !!")
@@ -231,9 +230,9 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
                                feedback = feedback)
         
         # Check that the last sld style has been downloaded
-        downloadLastStyles(plugin_directory = plugin_directory,
-                           feedback = feedback,
-                           language = styleLanguage)
+        # downloadLastStyles(plugin_directory = plugin_directory,
+        #                    feedback = feedback,
+        #                    language = styleLanguage)
         
         # Recover the bbox coordinates if exists
         if not bbox.isNull():
@@ -264,8 +263,31 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             
             # The location argument in the GeoClimate config file is replaced by
             # the bbox coordinates
-            location = bbox_coord
-            
+            location_conf = bbox_coord
+        # If location is a bbox or list of bbox, convert string to list
+        elif location[0] == "[":
+            list_loc = []
+            list_str = location.split("], [")
+            if len(list_str) > 1:
+                for i, ls_str in enumerate(list_str):
+                    if i == 0:
+                        list_loc.append([float(v) for v in ls_str[1:].split(",")])
+                    elif i == len(list_str)-1:
+                        list_loc.append([float(v) for v in ls_str[:-1].split(",")])
+                    else:
+                        list_loc.append([float(v) for v in ls_str.split(",")])
+            else:
+                ls_str = list_str[0]
+                if ls_str[1:2].isdigit():
+                    list_loc.append([float(v) for v in ls_str[1:-1].split(",")])
+                else:
+                    list_loc = ls_str[1:-1].split(",")
+                    
+            location_conf = list_loc
+        else:
+            location_conf = location
+
+        
         if feedback:
             feedback.setProgressText("Start GeoClimate calculations")
             if feedback.isCanceled():
@@ -279,7 +301,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
             else:
                 raise QgsProcessingException('The output directory does not exist, neither its parent directory')
         config_file_path = os.path.join(outputDirectory, 
-                                        CONFIG_FILENAME.format(str(location).replace(',','_')))
+                                        CONFIG_FILENAME.format(str(location).replace(',','_').replace(' ','')[0:100]))
         
         # Fill in the indicator use list
         estimateHeight = False
@@ -298,9 +320,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         config_file_content = {
             "description": "GeoClimate configuration file created using the QGIS plug-in GeoClimateTool",
             "input": {
-                "locations": [
-                    location
-                ],
+                "locations": location_conf,
                 "area": 10000
             },
             "output": {
@@ -317,8 +337,9 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         }
         
         # Add the informations that are only needed for BDT data
-        if inputDirectory:
+        if inputDataset == "BDTOPO_V3" or inputDataset == "BDTOPO_V2":
             config_file_content["input"]["folder"] = inputDirectory
+            config_file_content["input"]["srid"] = 2154
 
         # Serializing json
         json_object = json.dumps(config_file_content, indent=4)
@@ -333,6 +354,7 @@ class GeoClimateProcessorAlgorithm(QgsProcessingAlgorithm):
         # Execute the GeoClimate workflow and log informations
         try: 
             for line in runProcess(java_cmd.split()):
+                print(line.decode("utf8"))
                 feedback.setProgressText(line.decode("utf8"))
             executed = True
         except:
